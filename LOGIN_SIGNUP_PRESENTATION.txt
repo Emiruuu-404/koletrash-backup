@@ -1,0 +1,123 @@
+KolekTrash - Login & Signup Pages Documentation
+================================================
+
+OVERVIEW
+--------
+The KolekTrash application features modern, responsive login and signup pages designed for a smart waste management system. Both pages follow a consistent design language with green color scheme and clean, professional UI.
+
+LOGIN PAGE (/login)
+-------------------
+Features:
+- Clean, modern design with gradient background (green-50 to blue-50 to green-100)
+- Two-panel layout: branding panel (left) and login form (right)
+- Mobile-responsive with collapsible branding section
+- Username and password input fields with icons
+- "Forgot Password?" and "Create Account" links positioned below password field
+- Loading overlay with animated spinner during authentication
+- Role-based redirection after successful login
+
+Design Elements:
+- Branding panel: Green gradient background with KolekTrash logo and features list
+- Form styling: Rounded inputs with focus states, green accent colors
+- Button: Gradient green button with hover effects and loading states
+- Error handling: Red alert boxes for authentication failures
+- Links: Clean underlined links without background overlays
+
+User Flow:
+1. User enters username and password
+2. System validates credentials via backend API
+3. On success: redirects to appropriate dashboard based on user role
+4. On failure: displays error message
+5. Loading state prevents multiple submissions
+
+SIGNUP PAGE (/signup)
+---------------------
+Features:
+- Comprehensive registration form with real-time validation
+- Multi-step form layout with responsive grid system
+- Input validation with visual feedback (checkmarks/X icons)
+- Barangay selection dropdown with search functionality
+- Password strength requirements with confirmation
+- Success popup modal after registration
+- Auto-redirect to login page after successful signup
+
+Form Fields:
+- Personal Information: First Name, Last Name, Contact Number
+- Account Details: Email, Username, Password, Confirm Password
+- Location: Barangay selection (dropdown), Address
+- All fields have real-time validation with error messages
+
+Validation Rules:
+- Names: Letters and spaces only, minimum 2 characters
+- Contact: Valid Philippine mobile number format
+- Email: Standard email format validation
+- Username: 3+ characters, alphanumeric and underscores only
+- Password: 6+ characters, must include uppercase, lowercase, and number
+- Address: Minimum 10 characters
+- Barangay: Required selection from predefined list
+
+Design Elements:
+- Same branding panel as login page
+- Form fields with icons and status indicators
+- Responsive grid layout for password fields
+- Success/error states with color-coded feedback
+- Loading overlay during form submission
+
+User Flow:
+1. User fills out registration form
+2. Real-time validation provides immediate feedback
+3. Form submission validates all fields
+4. On success: displays success message and redirects to login
+5. On error: displays specific error message
+
+TECHNICAL IMPLEMENTATION
+------------------------
+Frontend:
+- React with functional components and hooks
+- Tailwind CSS for styling
+- React Router for navigation
+- React Icons for UI icons
+- Axios for API communication
+
+Backend Integration:
+- RESTful API endpoints for authentication
+- Role-based access control
+- Password hashing and security
+- Email verification system
+- Forgot password functionality with email reset
+
+Security Features:
+- Input validation and sanitization
+- CSRF protection
+- Secure password requirements
+- Session management
+- Route guards for protected pages
+
+RESPONSIVE DESIGN
+-----------------
+- Mobile-first approach
+- Collapsible branding panels on mobile
+- Responsive grid layouts
+- Touch-friendly input fields
+- Optimized for various screen sizes
+
+ACCESSIBILITY
+-------------
+- Semantic HTML structure
+- ARIA labels for screen readers
+- Keyboard navigation support
+- High contrast color schemes
+- Focus indicators for interactive elements
+
+BROWSER COMPATIBILITY
+---------------------
+- Modern browsers (Chrome, Firefox, Safari, Edge)
+- Mobile browsers (iOS Safari, Chrome Mobile)
+- Progressive enhancement for older browsers
+
+DEPLOYMENT NOTES
+----------------
+- XAMPP environment configuration
+- Dynamic basename routing for subdirectory deployment
+- Environment-specific API endpoints
+- Production-ready build optimization

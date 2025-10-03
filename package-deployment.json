@@ -1,0 +1,24 @@
+{
+  "name": "koletrash-deployment",
+  "version": "1.0.0",
+  "description": "Deployment and version management scripts for KolekTrash",
+  "scripts": {
+    "deploy:staging": "echo 'Deploying to staging...' && git checkout development && git pull origin development",
+    "deploy:production": "echo 'Deploying to production...' && git checkout main && git pull origin main",
+    "version:patch": "npm version patch && git push origin main --tags",
+    "version:minor": "npm version minor && git push origin main --tags", 
+    "version:major": "npm version major && git push origin main --tags",
+    "backup:create": "git checkout -b backup-$(date +%Y%m%d-%H%M%S) && git push origin backup-$(date +%Y%m%d-%H%M%S)",
+    "rollback:safe": "git checkout main && git log --oneline -5 && echo 'Use: git reset --hard <commit-hash>'",
+    "status:check": "git status && echo '--- Recent Commits ---' && git log --oneline -5",
+    "branches:list": "git branch -a",
+    "tags:list": "git tag --sort=-creatordate | head -10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/koletrash.git"
+  },
+  "keywords": ["waste-management", "react", "php", "mysql"],
+  "author": "Your Name",
+  "license": "MIT"
+}
