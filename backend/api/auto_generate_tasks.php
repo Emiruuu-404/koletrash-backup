@@ -11,6 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 header('Content-Type: application/json');
 require_once '../config/database.php';
 
+$pdo = null;
+
 // Get POST data
 // Mga input na inaasahan mula sa client
 $data = json_decode(file_get_contents('php://input'), true);
@@ -29,8 +31,12 @@ if (!$start_date || !$end_date) {
 
 try {
     // Kumonekta sa database at simulan ang transaction
-    $pdo = new PDO("mysql:host=localhost;dbname=kolektrash_db", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $database = new Database();
+    $pdo = $database->connect();
+
+    if (!$pdo) {
+        throw new Exception('Database connection failed.');
+    }
     $pdo->beginTransaction();
 
     // Get available personnel - using the same structure as get_personnel.php

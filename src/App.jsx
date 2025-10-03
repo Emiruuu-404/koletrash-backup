@@ -34,7 +34,7 @@ import BarangayHeadNotifications from './components/barangayhead/BarangayHeadNot
 import BarangayHeadSettings from './components/barangayhead/BarangayHeadSettings'
 import Home from './components/barangayhead/Home'
 import ReportIssue from './components/barangayhead/ReportIssue'
-import Feedback from './components/barangayhead/Feedback'
+import BarangayHeadFeedback from './components/barangayhead/Feedback'
 import PickupRequest from './components/barangayhead/PickupRequest'
 import CollectionSchedule from './components/barangayhead/CollectionSchedule'
 import CollectionReports from './components/barangayhead/CollectionReports'
@@ -57,6 +57,7 @@ import GarbageCollectorRoutes from './components/garbagecollector/GarbageCollect
 import GarbageCollectorTasks from './components/garbagecollector/GarbageCollectorTasks'
 import GarbageCollectorSchedule from './components/garbagecollector/GarbageCollectorSchedule'
 import Issues from './components/admin/Issues'
+import AdminFeedback from './components/admin/Feedback'
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -133,7 +134,7 @@ function App() {
           <Route path="/admin/pickup" element={<RequireAuth><PickupSimple /></RequireAuth>} />
           <Route path="/admin/barangay" element={<RequireAuth><BarangayActivity /></RequireAuth>} />
           <Route path="/admin/barangay-new" element={<RequireAuth><BarangayActivityNew /></RequireAuth>} />
-          <Route path="/admin/feedback" element={<RequireAuth><Placeholder title="Feedback" /></RequireAuth>} />
+          <Route path="/admin/feedback" element={<RequireAuth><AdminFeedback /></RequireAuth>} />
           <Route path="/admin/issues" element={<RequireAuth><Issues /></RequireAuth>} />
           <Route path="/admin/task-management" element={<RequireAuth><TaskManagement /></RequireAuth>} />
           {/* Admin catch-all for undefined admin routes */}
@@ -158,7 +159,7 @@ function App() {
           >
             <Route index element={<Home />} />
             <Route path="report" element={<ReportIssue />} />
-            <Route path="feedback" element={<Feedback />} />
+            <Route path="feedback" element={<BarangayHeadFeedback />} />
             <Route path="pickup" element={<PickupRequest />} />
             <Route path="schedule" element={<CollectionSchedule />} />
             <Route path="collection-reports" element={<CollectionReports />} />

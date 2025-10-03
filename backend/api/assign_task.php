@@ -9,6 +9,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 header('Content-Type: application/json');
 require_once '../config/database.php';
 
+$pdo = null;
+
 // Get POST data
 $data = json_decode(file_get_contents('php://input'), true);
 
@@ -28,8 +30,12 @@ if (!$driver_id || !$truck_id || !$date || !$time || !$barangay_id) {
 }
 
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=kolektrash_db", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $database = new Database();
+    $pdo = $database->connect();
+
+    if (!$pdo) {
+        throw new Exception('Database connection failed.');
+    }
     $pdo->beginTransaction();
 
     // Check if there's already a pending assignment for this barangay, date, and time

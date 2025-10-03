@@ -50,7 +50,7 @@ const SIPOCOT_BOUNDS = [
 ];
 
 // API base URL - adjust this to match your backend setup
-const API_BASE_URL = 'https://koletrash.systemproj.combackend/api'; // Replace koletrash.systemproj.com with your actual Hostinger domain
+const API_BASE_URL = 'https://koletrash.systemproj.com/backend/api'; // Replace koletrash.systemproj.com with your actual Hostinger domain
 
 // Function to fetch scheduled routes from API (daily generated routes)
 const fetchScheduledRoutes = async (date) => {

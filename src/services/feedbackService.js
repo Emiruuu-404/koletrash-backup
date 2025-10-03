@@ -1,6 +1,47 @@
 const API_URL = 'https://koletrash.systemproj.com/backend/api'; // Replace koletrash.systemproj.com with your actual Hostinger domain
 
 export const feedbackService = {
+    getAllFeedback: async () => {
+        try {
+            const response = await fetch(`${API_URL}/get_feedback.php`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            const responseText = await response.text();
+            let data;
+
+            try {
+                data = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error('JSON Parse Error:', parseError);
+                console.error('Response that failed to parse:', responseText);
+                throw new Error('Invalid response from server');
+            }
+
+            if (!response.ok) {
+                throw new Error(data?.message || `HTTP error! status: ${response.status}`);
+            }
+
+            if (data.status === 'success') {
+                return {
+                    success: true,
+                    data: Array.isArray(data.data) ? data.data : [],
+                    message: data.message
+                };
+            }
+
+            throw new Error(data.message || 'Failed to fetch feedback');
+        } catch (error) {
+            console.error('Error in getAllFeedback:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    },
     submitFeedback: async (feedbackData) => {
         try {
             // Validate all required fields are present and not empty
