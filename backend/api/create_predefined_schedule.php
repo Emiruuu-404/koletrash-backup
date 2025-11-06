@@ -20,10 +20,24 @@ try {
         throw new Exception('Invalid JSON body');
     }
 
-    $required = ['barangay_id', 'barangay_name', 'cluster_id', 'schedule_type', 'day_of_week', 'start_time', 'end_time'];
+    $required = ['barangay_id', 'cluster_id', 'schedule_type', 'day_of_week', 'start_time', 'end_time'];
     foreach ($required as $r) {
         if (empty($input[$r])) {
             throw new Exception('Missing field: ' . $r);
+        }
+    }
+
+    // Resolve barangay_name if not provided
+    $barangayId = $input['barangay_id'];
+    $barangayName = isset($input['barangay_name']) ? $input['barangay_name'] : null;
+    if (!$barangayName) {
+        $lookup = $db->prepare('SELECT barangay_name FROM barangay WHERE barangay_id = ? LIMIT 1');
+        $lookup->execute([$barangayId]);
+        $row = $lookup->fetch(PDO::FETCH_ASSOC);
+        if ($row && !empty($row['barangay_name'])) {
+            $barangayName = $row['barangay_name'];
+        } else {
+            $barangayName = '';
         }
     }
 
@@ -35,8 +49,8 @@ try {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())';
     $stmt = $db->prepare($sql);
     $stmt->execute([
-        $input['barangay_id'],
-        $input['barangay_name'],
+        $barangayId,
+        $barangayName,
         $input['cluster_id'],
         $input['schedule_type'],
         $input['day_of_week'],

@@ -9,6 +9,23 @@ for (let hour = 6; hour <= 17; hour++) {
   if (hour !== 17) timeSlots.push(`${hour.toString().padStart(2, '0')}:30`);
 }
 
+// Build a stable unique id for a schedule record
+const computeScheduleId = (s) => {
+  const numId = s?.schedule_template_id || s?.id || s?.schedule_id || s?.predefined_id;
+  if (numId !== undefined && numId !== null && String(numId).trim() !== '') {
+    return String(numId);
+  }
+  // Fallback to composite natural key
+  const parts = [
+    s?.barangay_id ?? 'b',
+    s?.schedule_type ?? 't',
+    s?.cluster_id ?? 'c',
+    s?.day_of_week ?? 'd',
+    (s?.start_time || '').substring(0,5)
+  ];
+  return parts.join('|');
+};
+
 export default function ManageSchedule() {
   const [selectedTruck, setSelectedTruck] = useState('Truck 1');
   const [selectedCluster, setSelectedCluster] = useState('2C-CA'); // Default to Cluster A
@@ -31,6 +48,41 @@ export default function ManageSchedule() {
   const [addError, setAddError] = useState(null);
   const [addSaving, setAddSaving] = useState(false);
   const [addForm, setAddForm] = useState({ date: '', start_time: '', end_time: '', barangay_id: '' });
+
+  // Ctrl-based multi-select state
+  const [ctrlPressed, setCtrlPressed] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const toggleSelected = (id) => {
+    if (!id) return; // guard
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelected = () => setSelectedIds(new Set());
+  const selectedCount = selectedIds.size;
+  const selectedArray = Array.from(selectedIds);
+
+  // Track Ctrl/Meta key
+  useEffect(() => {
+    const down = (e) => {
+      if (e.ctrlKey || e.key === 'Control' || e.metaKey) setCtrlPressed(true);
+    };
+    const up = (e) => {
+      if (!e.ctrlKey && !e.metaKey) setCtrlPressed(false);
+      if (e.key === 'Control' && !e.metaKey) setCtrlPressed(false);
+    };
+    const onBlur = () => setCtrlPressed(false);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   // Get the start of the current week (Monday)
   const getWeekStart = (date) => {
@@ -173,9 +225,6 @@ export default function ManageSchedule() {
         schedule.schedule_type === 'weekly_cluster' &&
         Number(schedule.week_of_month) === Number(weekNumber)
       ));
-      console.log('Selected Cluster:', selectedCluster);
-      console.log('Current Week Number:', weekNumber);
-      console.log('Filtered Schedules:', filtered);
       return filtered;
     }
   };
@@ -208,6 +257,9 @@ export default function ManageSchedule() {
       scheduleType: schedule.schedule_type,
       weekOfMonth: schedule.week_of_month,
       barangayId: schedule.barangay_id,
+      updatedAt: schedule.updated_at,
+      createdAt: schedule.created_at,
+      id: computeScheduleId(schedule),
       schedule
     };
     
@@ -221,38 +273,116 @@ export default function ManageSchedule() {
   const eventHeight = 60;
   const eventFontSize = 14;
 
+  // Tooltip formatter
+  const formatTooltip = (e) => {
+    return `${e.label}\n${e.scheduleType}${e.weekOfMonth ? ` (Week ${e.weekOfMonth})` : ''}\n${e.time} - ${e.end}\nUpdated: ${e.updatedAt || '—'}`;
+  };
 
-  // Loading skeleton component
-  const LoadingSkeleton = () => (
-    <div className="animate-pulse">
-      <div className="grid" style={{ gridTemplateColumns: `100px repeat(5, minmax(${colWidth}, 1fr))` }}>
-        <div className="bg-gray-200 h-12 rounded-tl-lg"></div>
-        {days.map((_, i) => (
-          <div key={i} className="bg-gray-200 h-12 rounded-t-lg"></div>
-        ))}
-      </div>
-      <div className="grid bg-white rounded-b-lg border" style={{ gridTemplateColumns: `100px repeat(5, minmax(${colWidth}, 1fr))` }}>
-        <div className="flex flex-col">
-          {timeSlots.map((_, i) => (
-            <div key={i} className="bg-gray-100 h-20 border-r border-gray-200"></div>
-          ))}
-        </div>
-        {days.map((_, dayIndex) => (
-          <div key={dayIndex} className="flex flex-col">
-            {timeSlots.map((_, timeIndex) => (
-              <div key={timeIndex} className="bg-gray-50 h-20 border-r border-gray-200 flex items-center justify-center">
-                <div className="w-32 h-8 bg-gray-200 rounded"></div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  // Bulk helpers
+  const bulkDelete = async () => {
+    if (selectedCount === 0) return;
+    if (!window.confirm(`Delete ${selectedCount} selected schedule(s)?`)) return;
+    setEditSaving(true);
+    try {
+      for (const id of selectedArray) {
+        const isNumeric = /^\d+$/.test(String(id));
+        if (isNumeric) {
+          await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+          }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Delete failed'); });
+        } else {
+          // Composite id format: barangay|type|cluster|day|start
+          const [barangay_id, schedule_type, cluster_id, day_of_week, start_time] = String(id).split('|');
+          await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+              barangay_id, schedule_type, cluster_id, day_of_week, start_time
+            })
+          }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Delete failed'); });
+        }
+      }
+      clearSelected();
+      await fetchSchedules();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ day_of_week: '', start_time: '', end_time: '', week_of_month: '' });
+  const bulkEditSubmit = async (e) => {
+    e.preventDefault();
+    setBulkError(null);
+    if (!bulkForm.day_of_week || !bulkForm.start_time || !bulkForm.end_time) {
+      setBulkError('Please fill out day, start time and end time.');
+      return;
+    }
+    if (bulkForm.start_time >= bulkForm.end_time) {
+      setBulkError('Start time must be earlier than end time.');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      for (const id of selectedArray) {
+        const isNumeric = /^\d+$/.test(String(id));
+        if (isNumeric) {
+          await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+              schedule_template_id: id,
+              day_of_week: bulkForm.day_of_week,
+              start_time: bulkForm.start_time,
+              end_time: bulkForm.end_time,
+              week_of_month: bulkForm.week_of_month ? Number(bulkForm.week_of_month) : undefined
+            })
+          }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Update failed'); });
+        } else {
+          const [barangay_id, schedule_type, cluster_id, dayOfWeekOriginal, startOriginal] = String(id).split('|');
+          await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule_by_fields.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+              barangay_id, schedule_type, cluster_id,
+              match_day_of_week: dayOfWeekOriginal,
+              match_start_time: startOriginal,
+              day_of_week: bulkForm.day_of_week,
+              start_time: bulkForm.start_time,
+              end_time: bulkForm.end_time,
+              week_of_month: bulkForm.week_of_month ? Number(bulkForm.week_of_month) : undefined
+            })
+          }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Update failed'); });
+        }
+      }
+      setBulkOpen(false);
+      clearSelected();
+      await fetchSchedules();
+    } catch (err) {
+      setBulkError(err.message);
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  // Clear selection on context changes
+  useEffect(() => {
+    clearSelected();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTruck, selectedCluster, currentWeek]);
 
   return (
     <div className="p-6 max-w-full overflow-x-auto bg-emerald-50 min-h-screen font-sans">
+      {/* Bulk action bar (visible when there are selections) */}
+      {selectedCount > 0 && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+          <div className="text-emerald-900 text-sm font-medium">{selectedCount} selected</div>
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => setBulkOpen(true)}>Edit Selected</button>
+            <button className="px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50" onClick={bulkDelete}>Delete Selected</button>
+            <button className="px-3 py-1.5 rounded border border-emerald-300 text-emerald-800 hover:bg-emerald-100" onClick={clearSelected}>Clear</button>
+          </div>
+        </div>
+      )}
+
       {/* Header removed - using global admin header */}
       <div className="mb-4">
         {/* Legend */}
@@ -308,7 +438,7 @@ export default function ManageSchedule() {
             {trucks.map(truck => (
               <button
                 key={truck}
-                onClick={() => setSelectedTruck(truck)}
+                onClick={() => { setSelectedTruck(truck); clearSelected(); }}
                 className={`px-3 py-1 rounded mr-2 font-semibold text-sm transition ${
                   selectedTruck === truck 
                     ? 'bg-green-600 text-white' 
@@ -333,7 +463,7 @@ export default function ManageSchedule() {
               <select
                 className="border border-gray-300 rounded-md px-3 py-1 text-sm font-medium focus:border-green-600 focus:outline-none"
                 value={selectedCluster}
-                onChange={e => setSelectedCluster(e.target.value)}
+                onChange={e => { setSelectedCluster(e.target.value); clearSelected(); }}
                 title="Select cluster for Truck 2"
               >
                 <option value="2C-CA">Cluster A</option>
@@ -345,7 +475,7 @@ export default function ManageSchedule() {
           )}
           <button
             onClick={() => { setAddForm({ date: '', start_time: '', end_time: '', barangay_id: '' }); setAddError(null); setAddOpen(true); }}
-            className="ml-4 px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700"
+            className="ml-2 px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700"
             title="Add schedule"
           >
             Add Schedule
@@ -374,7 +504,7 @@ export default function ManageSchedule() {
       {/* Schedule Grid */}
       <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 180px)' }}>
         {schedulesLoading ? (
-          <LoadingSkeleton />
+          <div className="text-center py-8">Loading...</div>
         ) : filteredSchedules.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-lg border-2 border-dashed border-gray-300">
             <div className="text-xl font-semibold text-gray-700 mb-2">No predefined schedules found</div>
@@ -415,7 +545,7 @@ export default function ManageSchedule() {
             >
               {/* Time Column */}
               <div className="flex flex-col items-center pt-2">
-                {timeSlots.map((slot, i) => (
+                {timeSlots.map((slot) => (
                   <div
                     key={slot}
                     className="w-full text-xs text-center text-gray-500 flex items-center justify-center border-r border-gray-100"
@@ -429,7 +559,7 @@ export default function ManageSchedule() {
               {/* Day Columns */}
               {days.map(day => (
                 <div key={day.day} className="relative flex flex-col pt-2">
-                  {timeSlots.map((slot, i) => {
+                  {timeSlots.map((slot) => {
                     const key = `${day.day}-${slot}`;
                     const events = eventMap[key] || [];
                     return (
@@ -440,8 +570,8 @@ export default function ManageSchedule() {
                       >
                         {events.map((event, idx) => (
                           <div
-                            key={event.label + idx}
-                            className={`rounded-lg shadow-md border-l-4 ${event.color} ${event.border} flex flex-col items-center justify-center mb-2 p-2 cursor-pointer hover:scale-105 transition-all duration-200`}
+                            key={`${event.id || event.label}-${idx}`}
+                            className={`relative rounded-lg shadow-md border-l-4 ${event.color} ${event.border} flex flex-col items-start justify-center mb-2 p-2 hover:scale-105 transition-all duration-200 cursor-pointer ${selectedIds.has(event.id) ? 'ring-2 ring-emerald-400' : ''}`}
                             style={{ 
                               width: eventWidth, 
                               height: eventHeight, 
@@ -449,8 +579,13 @@ export default function ManageSchedule() {
                               fontSize: eventFontSize,
                               minHeight: '50px'
                             }}
-                            title={`${event.label} - ${event.time} to ${event.end} - Type: ${event.scheduleType}`}
-                            onClick={() => {
+                            title={formatTooltip(event)}
+                            onClick={(e) => {
+                              // If Ctrl/Meta is held, toggle selection; otherwise open edit
+                              if (e.ctrlKey || e.metaKey || ctrlPressed) {
+                                toggleSelected(event.id);
+                                return;
+                              }
                               const s = event.schedule;
                               setEditingSchedule(s);
                               setEditForm({
@@ -463,15 +598,27 @@ export default function ManageSchedule() {
                               setEditOpen(true);
                             }}
                           >
-                            <span className={`text-sm font-bold ${event.text} text-center leading-tight`}>
-                              {event.label}
-                            </span>
+                            <div className="flex items-center w-full justify-between gap-2">
+                              <span className={`text-sm font-bold ${event.text}`}>{event.label}</span>
+                              {(ctrlPressed || selectedCount > 0) && (
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={selectedIds.has(event.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={() => toggleSelected(event.id)}
+                                />
+                              )}
+                            </div>
                             <span className={`text-xs ${event.text} opacity-75 mt-1`}>
                               {event.time} - {event.end}
                             </span>
                             <span className={`text-xs ${event.text} opacity-60 mt-1`}>
                               {event.scheduleType} {event.weekOfMonth ? `(Week ${event.weekOfMonth})` : ''}
                             </span>
+                            {event.updatedAt && (
+                              <span className={`text-[10px] ${event.text} opacity-60 mt-1`}>Updated: {new Date(event.updatedAt).toLocaleString()}</span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -484,27 +631,80 @@ export default function ManageSchedule() {
         )}
       </div>
 
+      {/* Bulk Edit Modal */}
+      {selectedCount > 0 && bulkOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl relative p-6">
+            <button className="absolute top-3 right-3 text-gray-500 hover:text-green-700" onClick={() => setBulkOpen(false)}>✕</button>
+            <h2 className="text-lg font-semibold text-green-800 mb-4">Edit {selectedCount} Selected</h2>
+            {bulkError && <div className="text-red-600 text-sm mb-3">{bulkError}</div>}
+            <form onSubmit={bulkEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-green-700 mb-1">Day of Week</label>
+                  <select className="w-full border border-green-200 rounded px-3 py-2" value={bulkForm.day_of_week} onChange={(e) => setBulkForm({ ...bulkForm, day_of_week: e.target.value })} required>
+                    <option value="">Select day</option>
+                    {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (<option key={d} value={d}>{d}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-green-700 mb-1">Week of Month</label>
+                  <input type="number" min={1} max={4} className="w-full border border-green-200 rounded px-3 py-2" value={bulkForm.week_of_month || ''} onChange={(e) => setBulkForm({ ...bulkForm, week_of_month: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-green-700 mb-1">Start Time</label>
+                  <input type="time" className="w-full border border-green-200 rounded px-3 py-2" value={bulkForm.start_time} onChange={(e) => setBulkForm({ ...bulkForm, start_time: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="block text-sm text-green-700 mb-1">End Time</label>
+                  <input type="time" className="w-full border border-green-200 rounded px-3 py-2" value={bulkForm.end_time} onChange={(e) => setBulkForm({ ...bulkForm, end_time: e.target.value })} required />
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button type="button" className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => setBulkOpen(false)}>Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" disabled={bulkSaving}>{bulkSaving ? 'Saving...' : 'Apply Changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Inline Edit Modal */}
       {editOpen && editingSchedule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
-            <button
-              className="absolute top-2 right-2 text-gray-500 hover:text-green-700"
-              onClick={() => setEditOpen(false)}
-              aria-label="Close"
-            >✕</button>
-            <h2 className="text-lg font-semibold text-green-800 mb-4">Edit Predefined Schedule</h2>
-
-            <div className="text-sm text-gray-700 mb-4">
-              <div className="font-semibold">{editingSchedule.barangay_name}</div>
-              <div>Type: <span className="uppercase">{editingSchedule.schedule_type}</span></div>
-              <div>Cluster: {editingSchedule.cluster_id}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-gray-100">
+              <button
+                className="absolute top-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:text-green-700 hover:bg-gray-100"
+                onClick={() => setEditOpen(false)}
+                aria-label="Close"
+                title="Close"
+              >✕</button>
+              <h2 className="text-xl font-semibold text-green-800">Edit Predefined Schedule</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                <span className="inline-flex items-center gap-2 font-medium text-gray-800">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                  {editingSchedule.barangay_name}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs uppercase tracking-wide">
+                  {editingSchedule.schedule_type}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">
+                  Cluster: {editingSchedule.cluster_id}
+                </span>
+              </div>
             </div>
 
             {editError && (
-              <div className="text-red-600 text-sm mb-3">{editError}</div>
+              <div className="mx-6 mt-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                {editError}
+              </div>
             )}
 
+            {/* Body */}
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -623,13 +823,14 @@ export default function ManageSchedule() {
                   setEditSaving(false);
                 }
               }}
-              className="space-y-4"
+              className="px-6 py-5 space-y-6"
             >
+              {/* When & Frequency */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-green-700 mb-1">Day of Week</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Day of Week</label>
                   <select
-                    className="w-full border border-green-200 rounded px-3 py-2"
+                    className="w-full border border-gray-200 focus:border-emerald-500 focus:ring-0 rounded-lg px-3 py-2 text-gray-800"
                     value={editForm.day_of_week}
                     onChange={(e) => setEditForm({ ...editForm, day_of_week: e.target.value })}
                     required
@@ -640,34 +841,39 @@ export default function ManageSchedule() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-green-700 mb-1">Week of Month</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Week of Month</label>
                   <input
                     type="number"
                     min={1}
                     max={4}
-                    className="w-full border border-green-200 rounded px-3 py-2"
+                    className="w-full border border-gray-200 focus:border-emerald-500 focus:ring-0 rounded-lg px-3 py-2 text-gray-800 disabled:bg-gray-50"
                     value={editForm.week_of_month}
                     onChange={(e) => setEditForm({ ...editForm, week_of_month: e.target.value })}
                     disabled={editingSchedule.schedule_type !== 'weekly_cluster'}
                   />
+                  {editingSchedule.schedule_type === 'weekly_cluster' && (
+                    <p className="mt-1 text-xs text-gray-500">Enter a value from 1 to 4.</p>
+                  )}
                 </div>
               </div>
+
+              {/* Time Range */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-green-700 mb-1">Start Time</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Time</label>
                   <input
                     type="time"
-                    className="w-full border border-green-200 rounded px-3 py-2"
+                    className="w-full border border-gray-200 focus:border-emerald-500 focus:ring-0 rounded-lg px-3 py-2 text-gray-800"
                     value={editForm.start_time}
                     onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-green-700 mb-1">End Time</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">End Time</label>
                   <input
                     type="time"
-                    className="w-full border border-green-200 rounded px-3 py-2"
+                    className="w-full border border-gray-200 focus:border-emerald-500 focus:ring-0 rounded-lg px-3 py-2 text-gray-800"
                     value={editForm.end_time}
                     onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })}
                     required
@@ -675,12 +881,13 @@ export default function ManageSchedule() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex items-center gap-2">
+              {/* Actions Row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   {editingSchedule.schedule_type === 'weekly_cluster' && (
                     <button
                       type="button"
-                      className="px-3 py-2 bg-purple-100 text-purple-800 rounded hover:bg-purple-200"
+                      className="px-4 py-2 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
                       title="Create a copy on the next week"
                       onClick={async () => {
                         setEditError(null);
@@ -708,12 +915,7 @@ export default function ManageSchedule() {
                           const data = await res.json();
                           if (!data.success) throw new Error(data.message || 'Failed to copy schedule');
                           // Refresh list
-                          setSchedulesLoading(true);
-                          const ref = await fetch('https://koletrash.systemproj.com/backend/api/get_predefined_schedules.php');
-                          const refData = await ref.json();
-                          if (refData.success) {
-                            setPredefinedSchedules(Array.isArray(refData.schedules) ? refData.schedules : []);
-                          }
+                          await fetchSchedules();
                         } catch (err) {
                           setEditError(err.message);
                         } finally {
@@ -725,17 +927,79 @@ export default function ManageSchedule() {
                     </button>
                   )}
                 </div>
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                    onClick={async () => {
+                      if (!window.confirm('Delete this schedule?')) return;
+                      setEditError(null);
+                      try {
+                        setEditSaving(true);
+                        const idVal = (
+                          editingSchedule?.schedule_template_id ||
+                          editingSchedule?.template_id ||
+                          editingSchedule?.id ||
+                          editingSchedule?.schedule_id ||
+                          editingSchedule?.predefined_id
+                        );
+                        let res;
+                        if (idVal) {
+                          res = await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: idVal })
+                          });
+                        } else {
+                          res = await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              barangay_id: editingSchedule.barangay_id,
+                              cluster_id: editingSchedule.cluster_id,
+                              schedule_type: editingSchedule.schedule_type,
+                              day_of_week: editingSchedule.day_of_week,
+                              start_time: (editingSchedule.start_time || '').substring(0,5),
+                              week_of_month: editingSchedule.week_of_month
+                            })
+                          });
+                        }
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.message || 'Failed to delete schedule');
+                        // Remove locally
+                        setPredefinedSchedules(prev => prev.filter(s => {
+                          const sId = s.schedule_template_id || s.id;
+                          if (idVal) return sId !== idVal;
+                          const sStart = (s.start_time || '').substring(0,5);
+                          return !(
+                            s.barangay_id === editingSchedule.barangay_id &&
+                            s.cluster_id === editingSchedule.cluster_id &&
+                            s.schedule_type === editingSchedule.schedule_type &&
+                            s.day_of_week === editingSchedule.day_of_week &&
+                            sStart === (editingSchedule.start_time || '').substring(0,5)
+                          );
+                        }));
+                        setEditOpen(false);
+                      } catch (err) {
+                        setEditError(err.message);
+                      } finally {
+                        setEditSaving(false);
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
                     onClick={() => setEditOpen(false)}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                     disabled={editSaving}
                   >
                     {editSaving ? 'Saving...' : 'Save Changes'}
@@ -780,8 +1044,10 @@ export default function ManageSchedule() {
                   const isTruck1 = selectedTruck === 'Truck 1';
                   const schedule_type = isTruck1 ? 'daily_priority' : 'weekly_cluster';
                   const cluster_id = isTruck1 ? '1C-PB' : selectedCluster;
+                  const barangay = barangayList.find(b => String(b.barangay_id) === String(addForm.barangay_id));
                   const payload = {
                     barangay_id: addForm.barangay_id,
+                    barangay_name: barangay ? barangay.barangay_name : undefined,
                     cluster_id,
                     schedule_type,
                     day_of_week: dayOfWeek,
