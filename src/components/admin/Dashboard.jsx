@@ -5,6 +5,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { buildApiUrl } from '../../config/api'
 
 const ENV_COLORS = {
   primary: '#2d5016',
@@ -40,8 +41,24 @@ const SIPOCOT_BOUNDS = [
   [13.9000, 123.2000], // Northeast
 ]
 
-// Backend API base
-const API_BASE_URL = 'http://localhost/koletrash/backend/api' // Local development configuration
+const getAuthToken = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    return localStorage.getItem('access_token')
+  } catch (err) {
+    console.warn('Unable to read access token', err)
+    return null
+  }
+}
+
+const getAuthHeaders = (extra = {}) => {
+  const token = getAuthToken()
+  return {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  }
+}
 
 const truckMarkerIcon = (scale = 1) => {
   const size = 36 * scale
@@ -92,7 +109,9 @@ export default function Dashboard() {
       try {
         setIsLiveLoading(true)
         setLiveError(null)
-        const res = await fetch(`${API_BASE_URL}/live_trucks.php?since=300&limit=2`)
+        const res = await fetch(`${buildApiUrl('live_trucks.php')}?since=300&limit=2`, {
+          headers: getAuthHeaders(),
+        })
         const data = await res.json()
         if (data?.success) {
           setLiveTrucks(Array.isArray(data.trucks) ? data.trucks : [])
@@ -115,7 +134,9 @@ export default function Dashboard() {
     const fetchDestinations = async () => {
       try {
         const today = new Date().toISOString().slice(0,10)
-        const res = await fetch(`${API_BASE_URL}/get_scheduled_routes.php?date=${today}`)
+        const res = await fetch(`${buildApiUrl('get_scheduled_routes.php')}?date=${today}`, {
+          headers: getAuthHeaders(),
+        })
         const data = await res.json()
         if (data?.success && Array.isArray(data.routes)) {
           const pins = data.routes

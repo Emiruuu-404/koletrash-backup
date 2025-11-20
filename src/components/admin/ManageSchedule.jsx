@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { buildApiUrl } from '../../config/api.js';
 
 const trucks = ['Truck 1', 'Truck 2'];
 
@@ -34,6 +35,25 @@ export default function ManageSchedule() {
   const [schedulesError, setSchedulesError] = useState(null);
   const [barangayList, setBarangayList] = useState([]);
   const [clusterList, setClusterList] = useState([]);
+
+  // Helper function to get auth token
+  const getAuthToken = () => {
+    try {
+      return localStorage.getItem('access_token');
+    } catch {
+      return null;
+    }
+  };
+
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = getAuthToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
   // Set initial date to the current date (current month/week)
   const [currentWeek, setCurrentWeek] = useState(new Date());
 
@@ -97,7 +117,7 @@ export default function ManageSchedule() {
     const days = [];
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     
-    for (let i = 0; i < 5; i++) { // Monday to Friday only
+    for (let i = 0; i < 7; i++) { // Monday to Sunday
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + i);
       days.push({
@@ -152,17 +172,24 @@ export default function ManageSchedule() {
       const weekNumber = getWeekOfMonth(getWeekStart(currentWeek));
       const isTruck1 = selectedTruck === 'Truck 1';
       const params = new URLSearchParams();
+      
+      // Fetch all schedule types: daily_priority, fixed_days, and weekly_cluster
+      // We'll filter them in getFilteredSchedules based on truck selection
       if (isTruck1) {
-        params.set('schedule_type', 'daily_priority');
+        // For Truck 1, fetch daily_priority and fixed_days
+        params.set('schedule_type', 'daily_priority,fixed_days');
       } else {
+        // For Truck 2, fetch weekly_cluster
         params.set('schedule_type', 'weekly_cluster');
         params.set('cluster_id', selectedCluster);
         params.set('week_of_month', String(weekNumber));
       }
-      // Limit to visible weekdays
-      params.set('days', ['Monday','Tuesday','Wednesday','Thursday','Friday'].join(','));
-      const url = `https://koletrash.systemproj.com/backend/api/get_predefined_schedules.php?${params.toString()}`;
-      const res = await fetch(url);
+      // Limit to visible days (Monday to Sunday)
+      params.set('days', ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].join(','));
+      const url = `${buildApiUrl('get_predefined_schedules.php')}?${params.toString()}`;
+      const res = await fetch(url, {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (data.success) {
         setPredefinedSchedules(Array.isArray(data.schedules) ? data.schedules : []);
@@ -186,7 +213,9 @@ export default function ManageSchedule() {
 
   // Fetch barangays for mapping
   useEffect(() => {
-    fetch('https://koletrash.systemproj.com/backend/api/get_barangays.php')
+    fetch(buildApiUrl('get_barangays.php'), {
+      headers: getAuthHeaders()
+    })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -200,7 +229,9 @@ export default function ManageSchedule() {
 
   // Fetch clusters
   useEffect(() => {
-    fetch('https://koletrash.systemproj.com/backend/api/get_clusters.php')
+    fetch(buildApiUrl('get_clusters.php'), {
+      headers: getAuthHeaders()
+    })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -215,8 +246,11 @@ export default function ManageSchedule() {
   // Filter schedules based on truck selection
   const getFilteredSchedules = () => {
     if (selectedTruck === 'Truck 1') {
-      // Truck 1: Show priority barangays only (cluster_id = 1C-PB)
-      return predefinedSchedules.filter(schedule => schedule.cluster_id === '1C-PB');
+      // Truck 1: Show priority barangays (cluster_id = 1C-PB) with daily_priority or fixed_days schedule types
+      return predefinedSchedules.filter(schedule => 
+        schedule.cluster_id === '1C-PB' && 
+        (schedule.schedule_type === 'daily_priority' || schedule.schedule_type === 'fixed_days')
+      );
     } else {
       // Truck 2: Show clustered barangays based on selected cluster
       const weekNumber = getWeekOfMonth(getWeekStart(currentWeek));
@@ -233,7 +267,7 @@ export default function ManageSchedule() {
 
   // Build a map: { 'Mon-6:00': [event, ...], ... }
   const eventMap = {};
-
+  
   // Add predefined schedule data
   filteredSchedules.forEach(schedule => {
     const dayName = schedule.day_of_week.substring(0, 3); // Mon, Tue, etc.
@@ -242,17 +276,34 @@ export default function ManageSchedule() {
     
     if (!eventMap[timeKey]) eventMap[timeKey] = [];
     
+    // Check if schedule is new (created within last 7 days)
+    const isNew = (createdAt) => {
+      if (!createdAt) return false;
+      const created = new Date(createdAt);
+      const now = new Date();
+      const diffTime = Math.abs(now - created);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 7;
+    };
+    
     // Create event object for predefined schedule
     const predefinedEvent = {
       label: schedule.barangay_name,
       time: schedule.start_time,
       end: schedule.end_time,
-      color: schedule.schedule_type === 'daily_priority' ? 'bg-blue-100' : 
-             schedule.schedule_type === 'fixed_days' ? 'bg-green-100' : 'bg-purple-100',
-      border: schedule.schedule_type === 'daily_priority' ? 'border-blue-400' : 
-              schedule.schedule_type === 'fixed_days' ? 'border-green-400' : 'border-purple-400',
-      text: schedule.schedule_type === 'daily_priority' ? 'text-blue-900' : 
-            schedule.schedule_type === 'fixed_days' ? 'text-green-900' : 'text-purple-900',
+      // Green for daily_priority and fixed_days, blue for weekly_cluster
+      color: schedule.schedule_type === 'weekly_cluster' 
+        ? 'bg-gradient-to-br from-blue-100 to-blue-200' 
+        : 'bg-gradient-to-br from-green-100 to-emerald-100',
+      border: schedule.schedule_type === 'weekly_cluster' 
+        ? 'border-l-4 border-blue-500 shadow-blue-200' 
+        : 'border-l-4 border-green-500 shadow-green-200',
+      text: schedule.schedule_type === 'weekly_cluster' ? 'text-blue-900' : 'text-green-900',
+      shadow: schedule.schedule_type === 'weekly_cluster' ? 'shadow-md shadow-blue-200/50' : 'shadow-md shadow-green-200/50',
+      isNew: isNew(schedule.created_at),
+      badgeColor: schedule.schedule_type === 'weekly_cluster' 
+        ? 'bg-gradient-to-r from-blue-600 to-blue-700' 
+        : 'bg-gradient-to-r from-emerald-500 to-green-600',
       isPredefinedSchedule: true,
       scheduleType: schedule.schedule_type,
       weekOfMonth: schedule.week_of_month,
@@ -267,11 +318,11 @@ export default function ManageSchedule() {
   });
 
   // Improved grid sizing for better readability
-  const colWidth = '200px';
+  const colWidth = '150px'; // Reduced from 200px to fit 7 days better
   const rowHeight = 80;
-  const eventWidth = '180px';
-  const eventHeight = 60;
-  const eventFontSize = 14;
+  const eventWidth = '140px'; // Reduced to match smaller column
+  const eventHeight = 65; // Slightly taller for better visual appeal
+  const eventFontSize = 13;
 
   // Tooltip formatter
   const formatTooltip = (e) => {
@@ -287,14 +338,14 @@ export default function ManageSchedule() {
       for (const id of selectedArray) {
         const isNumeric = /^\d+$/.test(String(id));
         if (isNumeric) {
-          await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+          await fetch(buildApiUrl('delete_predefined_schedule.php'), {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ id })
           }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Delete failed'); });
         } else {
           // Composite id format: barangay|type|cluster|day|start
           const [barangay_id, schedule_type, cluster_id, day_of_week, start_time] = String(id).split('|');
-          await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          await fetch(buildApiUrl('delete_predefined_schedule.php'), {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({
               barangay_id, schedule_type, cluster_id, day_of_week, start_time
             })
           }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Delete failed'); });
@@ -329,8 +380,8 @@ export default function ManageSchedule() {
       for (const id of selectedArray) {
         const isNumeric = /^\d+$/.test(String(id));
         if (isNumeric) {
-          await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          await fetch(buildApiUrl('update_predefined_schedule.php'), {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({
               schedule_template_id: id,
               day_of_week: bulkForm.day_of_week,
               start_time: bulkForm.start_time,
@@ -340,8 +391,8 @@ export default function ManageSchedule() {
           }).then(r => r.json()).then(d => { if (!d.success) throw new Error(d.message || 'Update failed'); });
         } else {
           const [barangay_id, schedule_type, cluster_id, dayOfWeekOriginal, startOriginal] = String(id).split('|');
-          await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule_by_fields.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          await fetch(buildApiUrl('update_predefined_schedule_by_fields.php'), {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({
               barangay_id, schedule_type, cluster_id,
               match_day_of_week: dayOfWeekOriginal,
               match_start_time: startOriginal,
@@ -384,23 +435,6 @@ export default function ManageSchedule() {
       )}
 
       {/* Header removed - using global admin header */}
-      <div className="mb-4">
-        {/* Legend */}
-        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-3 h-3 rounded bg-blue-200 border border-blue-400"></span>
-            <span className="text-blue-900">Daily Priority</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-3 h-3 rounded bg-green-200 border border-green-400"></span>
-            <span className="text-green-900">Fixed Days</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-3 h-3 rounded bg-purple-200 border border-purple-400"></span>
-            <span className="text-purple-900">Weekly Cluster</span>
-          </div>
-        </div>
-      </div>
       
       {/* Navigation Controls */}
       <div className="flex items-center justify-between mb-4">
@@ -502,7 +536,7 @@ export default function ManageSchedule() {
       )}
 
       {/* Schedule Grid */}
-      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 180px)' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 180px)', width: '100%' }}>
         {schedulesLoading ? (
           <div className="text-center py-8">Loading...</div>
         ) : filteredSchedules.length === 0 ? (
@@ -518,11 +552,12 @@ export default function ManageSchedule() {
             <div
               className="grid"
               style={{
-                gridTemplateColumns: `100px repeat(5, minmax(${colWidth}, 1fr))`,
+                gridTemplateColumns: `100px repeat(7, minmax(${colWidth}, 1fr))`,
                 position: 'sticky',
                 top: 0,
                 zIndex: 2,
                 background: '#f0fdf4',
+                minWidth: '1150px', // 100px + (7 * 150px) = 1150px minimum
               }}
             >
               <div className="bg-green-100 rounded-tl-lg py-3 font-semibold text-sm text-center">
@@ -539,8 +574,9 @@ export default function ManageSchedule() {
             <div
               className="grid bg-white rounded-b-lg border border-t-0 border-gray-200"
               style={{
-                gridTemplateColumns: `100px repeat(5, minmax(${colWidth}, 1fr))`,
+                gridTemplateColumns: `100px repeat(7, minmax(${colWidth}, 1fr))`,
                 minHeight: 500,
+                minWidth: '1150px', // 100px + (7 * 150px) = 1150px minimum
               }}
             >
               {/* Time Column */}
@@ -571,13 +607,15 @@ export default function ManageSchedule() {
                         {events.map((event, idx) => (
                           <div
                             key={`${event.id || event.label}-${idx}`}
-                            className={`relative rounded-lg shadow-md border-l-4 ${event.color} ${event.border} flex flex-col items-start justify-center mb-2 p-2 hover:scale-105 transition-all duration-200 cursor-pointer ${selectedIds.has(event.id) ? 'ring-2 ring-emerald-400' : ''}`}
+                            className={`relative rounded-lg ${event.color} ${event.border} ${event.shadow} flex flex-col items-center justify-center mb-2 p-2.5 hover:scale-105 hover:shadow-lg transition-all duration-200 cursor-pointer ${selectedIds.has(event.id) ? 'ring-2 ring-emerald-400 ring-offset-1' : ''}`}
                             style={{ 
                               width: eventWidth, 
                               height: eventHeight, 
-                              fontWeight: 600, 
+                              fontWeight: 700, 
                               fontSize: eventFontSize,
-                              minHeight: '50px'
+                              minHeight: '55px',
+                              overflow: 'hidden',
+                              position: 'relative'
                             }}
                             title={formatTooltip(event)}
                             onClick={(e) => {
@@ -598,27 +636,48 @@ export default function ManageSchedule() {
                               setEditOpen(true);
                             }}
                           >
-                            <div className="flex items-center w-full justify-between gap-2">
-                              <span className={`text-sm font-bold ${event.text}`}>{event.label}</span>
+                            {/* NEW badge for recently created schedules */}
+                            {event.isNew && (
+                              <div className={`absolute -top-1.5 -right-1.5 z-20 ${event.badgeColor} text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full shadow-lg border-2 border-white animate-pulse`}>
+                                NEW
+                              </div>
+                            )}
+                            
+                            {/* Decorative corner accent */}
+                            <div className={`absolute top-0 right-0 w-0 h-0 border-t-[12px] border-r-[12px] border-t-transparent ${event.scheduleType === 'weekly_cluster' ? 'border-r-blue-400' : 'border-r-green-400'} rounded-bl-lg opacity-60`}></div>
+                            
+                            {/* Main content */}
+                            <div className="flex items-center justify-center w-full gap-2 min-w-0 relative z-10">
+                              {/* Icon indicator */}
+                              <div className={`flex-shrink-0 w-2 h-2 rounded-full ${event.scheduleType === 'weekly_cluster' ? 'bg-blue-500' : 'bg-green-500'} shadow-sm`}></div>
+                              
+                              <span 
+                                className={`text-sm font-bold ${event.text} truncate flex-1 text-center`} 
+                                style={{ 
+                                  overflow: 'hidden', 
+                                  textOverflow: 'ellipsis', 
+                                  whiteSpace: 'nowrap',
+                                  lineHeight: '1.3'
+                                }}
+                              >
+                                {event.label}
+                              </span>
+                              
                               {(ctrlPressed || selectedCount > 0) && (
                                 <input
                                   type="checkbox"
-                                  className="h-4 w-4"
+                                  className="h-4 w-4 flex-shrink-0"
                                   checked={selectedIds.has(event.id)}
                                   onClick={(e) => e.stopPropagation()}
                                   onChange={() => toggleSelected(event.id)}
                                 />
                               )}
                             </div>
-                            <span className={`text-xs ${event.text} opacity-75 mt-1`}>
-                              {event.time} - {event.end}
-                            </span>
-                            <span className={`text-xs ${event.text} opacity-60 mt-1`}>
-                              {event.scheduleType} {event.weekOfMonth ? `(Week ${event.weekOfMonth})` : ''}
-                            </span>
-                            {event.updatedAt && (
-                              <span className={`text-[10px] ${event.text} opacity-60 mt-1`}>Updated: {new Date(event.updatedAt).toLocaleString()}</span>
-                            )}
+
+                            {/* Subtle pattern overlay */}
+                            <div className={`absolute inset-0 opacity-5 ${event.scheduleType === 'weekly_cluster' ? 'bg-blue-600' : 'bg-green-600'}`} style={{
+                              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 2px, currentColor 2px, currentColor 4px)'
+                            }}></div>
                           </div>
                         ))}
                       </div>
@@ -644,7 +703,7 @@ export default function ManageSchedule() {
                   <label className="block text-sm text-green-700 mb-1">Day of Week</label>
                   <select className="w-full border border-green-200 rounded px-3 py-2" value={bulkForm.day_of_week} onChange={(e) => setBulkForm({ ...bulkForm, day_of_week: e.target.value })} required>
                     <option value="">Select day</option>
-                    {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (<option key={d} value={d}>{d}</option>))}
+                    {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => (<option key={d} value={d}>{d}</option>))}
                   </select>
                 </div>
                 <div>
@@ -741,9 +800,9 @@ export default function ManageSchedule() {
                   let res;
                   if (!idVal) {
                     console.warn('No schedule id found; updating by fields', editingSchedule);
-                    res = await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule_by_fields.php', {
+                    res = await fetch(buildApiUrl('update_predefined_schedule_by_fields.php'), {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: getAuthHeaders(),
                       body: JSON.stringify({
                         barangay_id: editingSchedule.barangay_id,
                         cluster_id: editingSchedule.cluster_id,
@@ -760,9 +819,9 @@ export default function ManageSchedule() {
                     });
                   } else {
                     console.log('Updating predefined schedule id:', idVal, editingSchedule);
-                    res = await fetch('https://koletrash.systemproj.com/backend/api/update_predefined_schedule.php', {
+                    res = await fetch(buildApiUrl('update_predefined_schedule.php'), {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: getAuthHeaders(),
                       body: JSON.stringify({
                         // send all possible keys so backend can accept any
                         schedule_template_id: idVal,
@@ -835,7 +894,7 @@ export default function ManageSchedule() {
                     onChange={(e) => setEditForm({ ...editForm, day_of_week: e.target.value })}
                     required
                   >
-                    {['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => (
+                    {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -907,9 +966,9 @@ export default function ManageSchedule() {
                             week_of_month: nextWeek,
                             is_active: 1
                           };
-                          const res = await fetch('https://koletrash.systemproj.com/backend/api/create_predefined_schedule.php', {
+                          const res = await fetch(buildApiUrl('create_predefined_schedule.php'), {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAuthHeaders(),
                             body: JSON.stringify(payload)
                           });
                           const data = await res.json();
@@ -946,15 +1005,15 @@ export default function ManageSchedule() {
                         );
                         let res;
                         if (idVal) {
-                          res = await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+                          res = await fetch(buildApiUrl('delete_predefined_schedule.php'), {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAuthHeaders(),
                             body: JSON.stringify({ id: idVal })
                           });
                         } else {
-                          res = await fetch('https://koletrash.systemproj.com/backend/api/delete_predefined_schedule.php', {
+                          res = await fetch(buildApiUrl('delete_predefined_schedule.php'), {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: getAuthHeaders(),
                             body: JSON.stringify({
                               barangay_id: editingSchedule.barangay_id,
                               cluster_id: editingSchedule.cluster_id,
@@ -1057,9 +1116,9 @@ export default function ManageSchedule() {
                     week_of_month: schedule_type === 'weekly_cluster' ? wom : undefined,
                     is_active: 1
                   };
-                  const res = await fetch('https://koletrash.systemproj.com/backend/api/create_predefined_schedule.php', {
+                  const res = await fetch(buildApiUrl('create_predefined_schedule.php'), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify(payload)
                   });
                   const data = await res.json();

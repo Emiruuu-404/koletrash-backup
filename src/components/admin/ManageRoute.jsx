@@ -9,6 +9,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap 
 import ManageSchedule from './ManageSchedule';
 
 import { convertScheduleToRoutes } from '../../services/scheduleService';
+import { buildApiUrl } from '../../config/api';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -44,16 +45,28 @@ const SIPOCOT_BOUNDS = [
   [13.8266, 123.0326]  // Northeast bounds
 ];
 
-// API base URL - adjust this to match your backend setup
-// Note: previously missing slash after domain caused ERR_NAME_NOT_RESOLVED
-const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  ? '/backend/api'
-  : 'https://koletrash.systemproj.com/backend/api';
+const getAuthToken = () => {
+  try {
+    return localStorage.getItem('access_token');
+  } catch (err) {
+    console.warn('Unable to read access token', err);
+    return null;
+  }
+};
+
+const getAuthHeaders = (extra = {}) => {
+  const token = getAuthToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra
+  };
+};
 
 // Function to fetch scheduled routes from API (daily generated routes)
 const fetchScheduledRoutes = async (date) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/get_routes.php?date=${date}`);
+    const url = `${buildApiUrl('get_routes.php')}?date=${encodeURIComponent(date)}`;
+    const response = await fetch(url, { headers: getAuthHeaders() });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -99,7 +112,9 @@ const fetchScheduledRoutes = async (date) => {
 // Fetch full route details including ordered stops
 const fetchRouteDetails = async (routeId) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/get_route_details.php?id=${routeId}`);
+    const res = await fetch(`${buildApiUrl('get_route_details.php')}?id=${encodeURIComponent(routeId)}`, {
+      headers: getAuthHeaders()
+    });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
@@ -555,9 +570,9 @@ const ManageRoute = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/regenerate_routes.php`, {
+      const res = await fetch(buildApiUrl('regenerate_routes.php'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ date, policy: 'preserve_manual', scope: 'all' })
       });
       const data = await res.json();
@@ -576,7 +591,9 @@ const ManageRoute = () => {
     if (!selectedRoute?.id) return;
     try {
       setIsLoading(true);
-      const res = await fetch(`${API_BASE_URL}/get_assignment_options.php`);
+      const res = await fetch(buildApiUrl('get_assignment_options.php'), {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (!data.success) throw new Error(data.message || 'Failed to load assignment options');
       setAssignData({ trucks: data.trucks || [], teams: data.teams || [] });
@@ -593,9 +610,9 @@ const ManageRoute = () => {
     e?.preventDefault?.();
     try {
       setIsLoading(true);
-      const res = await fetch(`${API_BASE_URL}/update_route_assignment.php`, {
+      const res = await fetch(buildApiUrl('update_route_assignment.php'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(assignForm)
       });
       const data = await res.json();
@@ -618,7 +635,9 @@ const ManageRoute = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/get_assignment_options.php`);
+        const res = await fetch(buildApiUrl('get_assignment_options.php'), {
+          headers: getAuthHeaders()
+        });
         const data = await res.json();
         if (data.success) setAssignData({ trucks: data.trucks || [], teams: data.teams || [] });
       } catch (e) {
@@ -881,8 +900,9 @@ const ManageRoute = () => {
   async function submitAssign(e){
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE_URL}/update_route_assignment.php`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(buildApiUrl('update_route_assignment.php'), {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(assignForm)
       });
       const data = await res.json();

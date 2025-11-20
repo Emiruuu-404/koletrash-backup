@@ -1,8 +1,27 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FiEye, FiClock, FiCheckCircle, FiXCircle, FiAlertCircle, FiFilter, FiRefreshCw, FiImage, FiCalendar, FiUser, FiMapPin, FiTag, FiSearch, FiPrinter, FiX, FiExternalLink } from 'react-icons/fi';
 import axios from 'axios';
+import { buildApiUrl } from '../../config/api';
 
-const API_BASE_URL = 'http://localhost/koletrash/backend/api';
+const getAuthToken = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem('access_token');
+  } catch (err) {
+    console.warn('Unable to read access token', err);
+    return null;
+  }
+};
+
+const getAuthHeaders = (extra = {}) => {
+  const token = getAuthToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+};
+
+const API_BASE_URL = buildApiUrl();
 
 export default function Issues() {
   const [reports, setReports] = useState([]);
@@ -117,7 +136,9 @@ export default function Issues() {
         params.append('status', filterStatus);
       }
 
-      const response = await axios.get(`${API_BASE_URL}/get_issues.php?${params}`);
+      const response = await axios.get(`${buildApiUrl('get_issues.php')}?${params}`, {
+        headers: getAuthHeaders(),
+      });
       
       if (response.data.status === 'success') {
         const normalizedReports = (response.data.data || []).map((report) => {
@@ -166,10 +187,8 @@ export default function Issues() {
         formData.append('resolution_notes', resolutionNotes);
         formData.append('resolution_photo', resolutionPhoto);
 
-        const response = await axios.post(`${API_BASE_URL}/resolve_issue_with_photo.php`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
+        const response = await axios.post(`${buildApiUrl('resolve_issue_with_photo.php')}`, formData, {
+          headers: getAuthHeaders(),
         });
 
         if (response.data.status === 'success') {
@@ -194,12 +213,18 @@ export default function Issues() {
         }
       } else {
         // Use regular JSON endpoint for non-resolved status or no photo
-        const response = await axios.post(`${API_BASE_URL}/update_issue_status.php`, {
-          issue_id: reportId,
-          status: newStatus,
-          resolved_by: 1, // Admin user ID
-          resolution_notes: resolutionNotes
-        });
+        const response = await axios.post(
+          buildApiUrl('update_issue_status.php'),
+          {
+            issue_id: reportId,
+            status: newStatus,
+            resolved_by: 1, // Admin user ID
+            resolution_notes: resolutionNotes
+          },
+          {
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          }
+        );
 
         if (response.data.status === 'success') {
           setReports(prev => prev.map(report => {

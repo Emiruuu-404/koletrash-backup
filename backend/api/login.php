@@ -49,6 +49,22 @@ try {
 
     $role = $user->role_name ?: 'resident';
 
+    // Set user online_status to 'online' after successful login
+    try {
+        $updateStatusStmt = $db->prepare("UPDATE user SET online_status = 'online' WHERE user_id = ?");
+        $updateStatusStmt->execute([(int)$user->user_id]);
+    } catch (PDOException $e) {
+        // If online_status column doesn't exist yet, log warning but don't fail login
+        if (strpos($e->getMessage(), 'online_status') !== false) {
+            error_log('Warning: online_status column not found. Please run the database migration.');
+        } else {
+            error_log('Failed to update online_status: ' . $e->getMessage());
+        }
+    } catch (Exception $e) {
+        // Log error but don't fail login if online_status column doesn't exist yet
+        error_log('Failed to update online_status: ' . $e->getMessage());
+    }
+
     // Issue a JWT so the client can access protected endpoints using the same login flow.
     $token = kolektrash_issue_access_token([
         'user_id' => (int)$user->user_id,
@@ -73,6 +89,18 @@ try {
     ]);
 } catch (Throwable $e) {
     error_log('Login endpoint error: ' . $e->getMessage());
+    $logDir = __DIR__ . '/../logs';
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0775, true);
+    }
+    $logFile = $logDir . '/login_errors.log';
+    $logEntry = sprintf(
+        "[%s] %s\n%s\n\n",
+        date('c'),
+        $e->getMessage(),
+        $e->getTraceAsString()
+    );
+    @file_put_contents($logFile, $logEntry, FILE_APPEND);
     http_response_code(500);
     echo json_encode([
         'status' => 'error',

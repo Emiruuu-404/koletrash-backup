@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { FiSearch, FiPlus, FiUser, FiMoreVertical } from "react-icons/fi";
+import { buildApiUrl } from "../../config/api.js";
 
 // Environmental theme colors - Tree-inspired palette (same as ManageRoute)
 const ENV_COLORS = {
@@ -22,8 +23,6 @@ const ENV_COLORS = {
 };
 
 const accountTypes = ["All", "Truck Driver", "Garbage Collector", "Barangay Head", "Resident"];
-const staffStatuses = ["All", "On Duty", "Off Duty"];
-
 // Color map for roles using tree palette
 const roleColors = {
   "Admin": "bg-purple-800 text-white",
@@ -45,7 +44,6 @@ const roleDisplay = {
 export default function ManageUsers() {
   const [search, setSearch] = useState("");
   const [accountType, setAccountType] = useState("All");
-  const [status, setStatus] = useState("All");
   const [cluster, setCluster] = useState("All");
   const [clusterOptions, setClusterOptions] = useState(["All"]);
   const [openMenuUserId, setOpenMenuUserId] = useState(null);
@@ -64,34 +62,59 @@ export default function ManageUsers() {
   });
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [confirmAction, setConfirmAction] = useState(null); // { type: 'delete' | 'deactivate', user }
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Helper function to get auth token
+  const getAuthToken = () => {
+    try {
+      return localStorage.getItem('access_token');
+    } catch {
+      return null;
+    }
+  };
+
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = getAuthToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
+  const fetchUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await fetch(buildApiUrl("get_all_users.php"), {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        const nonAdmins = Array.isArray(data.users) ? data.users.filter(u => u.user_type !== 'admin') : [];
+        setUsers(nonAdmins);
+      } else {
+        alert(data.message || "Failed to fetch users.");
+      }
+    } catch (err) {
+      alert("Error fetching users.");
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchUsers() {
-      setLoadingUsers(true);
-      try {
-        const res = await fetch("https://koletrash.systemproj.com/backend/api/get_all_users.php");
-        const data = await res.json();
-        if (data.success) {
-          // Exclude admin accounts from listing
-          const nonAdmins = Array.isArray(data.users) ? data.users.filter(u => u.user_type !== 'admin') : [];
-          setUsers(nonAdmins);
-        } else {
-          alert(data.message || "Failed to fetch users.");
-        }
-      } catch (err) {
-        alert("Error fetching users.");
-      } finally {
-        setLoadingUsers(false);
-      }
-    }
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
   // Fetch clusters for barangay head and resident filtering
   useEffect(() => {
     async function fetchClusters() {
       try {
-        const res = await fetch('https://koletrash.systemproj.com/backend/api/get_clusters.php');
+        const res = await fetch(buildApiUrl('get_clusters.php'), {
+          headers: getAuthHeaders()
+        });
         const data = await res.json();
         let options = [];
         if (Array.isArray(data?.clusters)) {
@@ -115,34 +138,85 @@ export default function ManageUsers() {
       (u.full_name && u.full_name.toLowerCase().includes(search.toLowerCase()));
     const matchesType = accountType === "All" || (u.user_type && roleDisplay[u.user_type] === accountType);
     
-    // Status filtering only applies to staff (drivers and collectors)
-    const isStaff = u.user_type === 'truck_driver' || u.user_type === 'garbage_collector';
-    const matchesStatus = status === "All" || !isStaff || (u.status && u.status === status);
-    
     // Cluster filtering only applies to residents and barangay heads (not staff)
     const isResidentOrBgyHead = u.user_type === 'resident' || u.user_type === 'barangay_head';
     const matchesCluster = cluster === "All" || !isResidentOrBgyHead || (u.cluster_id === cluster || u.barangay === cluster);
     
-    return matchesSearch && matchesType && matchesStatus && matchesCluster;
+    return matchesSearch && matchesType && matchesCluster;
   });
 
-  // Get staff count for status filtering
-  const staffUsers = users.filter(u => u.user_type === 'truck_driver' || u.user_type === 'garbage_collector');
+  const onlineUsers = users.filter(u => u.online_status === 'online');
+  const offlineUsers = users.filter(u => u.online_status === 'offline' || !u.online_status);
 
-  // Function to get status color
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "On Duty":
-        return { bg: ENV_COLORS.light, color: ENV_COLORS.success };
-      case "Completed Route":
-        return { bg: ENV_COLORS.light, color: ENV_COLORS.primary };
-      case "On Leave":
-        return { bg: '#fff3cd', color: ENV_COLORS.warning };
-      case "Off Duty":
-        return { bg: '#f8d7da', color: ENV_COLORS.error };
-      default:
-        return { bg: ENV_COLORS.light, color: ENV_COLORS.textLight };
+  const handleDeactivateUser = async (user) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(buildApiUrl("deactivate_user.php"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ user_id: user.id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, online_status: 'offline' } : u));
+      } else {
+        alert(data.message || "Failed to deactivate user.");
+      }
+    } catch (err) {
+      alert("Error deactivating user.");
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+      setOpenMenuUserId(null);
     }
+  };
+
+  const handleDeleteUser = async (user) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(buildApiUrl("delete_account.php"), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ user_id: user.id })
+      });
+      const data = await res.json();
+      if (data.status === "success" || data.success) {
+        setUsers(prev => prev.filter(u => u.id !== user.id));
+      } else {
+        alert(data.message || "Failed to delete user.");
+      }
+    } catch (err) {
+      alert("Error deleting user.");
+    } finally {
+      setActionLoading(false);
+      setConfirmAction(null);
+      setOpenMenuUserId(null);
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    if (confirmAction.type === 'delete') {
+      await handleDeleteUser(confirmAction.user);
+    } else if (confirmAction.type === 'deactivate') {
+      await handleDeactivateUser(confirmAction.user);
+    }
+  };
+
+  const actionCopy = {
+    delete: {
+      title: "Delete account",
+      description: "This permanently removes the user and their profile data."
+    },
+    deactivate: {
+      title: "Deactivate account",
+      description: "This will force the user offline until they log back in."
+    }
+  };
+
+  const openActionConfirm = (type, user) => {
+    setOpenMenuUserId(null);
+    setConfirmAction({ type, user });
   };
 
 
@@ -183,19 +257,6 @@ export default function ManageUsers() {
           ))}
         </select>
         {(
-          accountType === 'Truck Driver' || accountType === 'Garbage Collector'
-        ) && (
-          <select 
-            value={status} 
-            onChange={(e) => setStatus(e.target.value)} 
-            className="px-3 py-2 rounded-md border border-gray-200 text-sm min-w-fit bg-white text-gray-800 outline-none cursor-pointer transition-all duration-200 focus:border-green-800"
-          >
-            {staffStatuses.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        )}
-        {(
           accountType === 'Barangay Head' || accountType === 'Resident'
         ) && (
           <select 
@@ -211,7 +272,7 @@ export default function ManageUsers() {
       </div>
 
       {/* Summary Cards - Minimal Design */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 my-6">
         <div className="bg-white p-5 rounded-lg border border-gray-200 text-center">
           <div className="text-sm text-gray-600 mb-2">Total Users</div>
           <div className="text-2xl font-normal text-green-800">
@@ -219,21 +280,15 @@ export default function ManageUsers() {
           </div>
         </div>
         <div className="bg-white p-5 rounded-lg border border-gray-200 text-center">
-          <div className="text-sm text-gray-600 mb-2">Staff On Duty</div>
+          <div className="text-sm text-gray-600 mb-2">Users Online</div>
           <div className="text-2xl font-normal text-green-600">
-            {staffUsers.filter(u => u.status === "On Duty").length}
+            {loadingUsers ? "Loading..." : onlineUsers.length}
           </div>
         </div>
         <div className="bg-white p-5 rounded-lg border border-gray-200 text-center">
-          <div className="text-sm text-gray-600 mb-2">Staff On Leave</div>
-          <div className="text-2xl font-normal text-orange-500">
-            {staffUsers.filter(u => u.status === "On Leave").length}
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-lg border border-gray-200 text-center">
-          <div className="text-sm text-gray-600 mb-2">Staff Off Duty</div>
+          <div className="text-sm text-gray-600 mb-2">Users Offline</div>
           <div className="text-2xl font-normal text-red-500">
-            {staffUsers.filter(u => u.status === "Off Duty").length}
+            {loadingUsers ? "Loading..." : offlineUsers.length}
           </div>
         </div>
       </div>
@@ -261,10 +316,19 @@ export default function ManageUsers() {
                     <FiMoreVertical />
                   </button>
                   {openMenuUserId === user.id && (
-                    <div className="absolute right-2 top-8 bg-white border border-gray-200 rounded shadow z-10 text-left w-36">
-                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 border-0 bg-transparent cursor-pointer">View</button>
-                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 border-0 bg-transparent cursor-pointer">Edit</button>
-                      <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 border-0 bg-transparent cursor-pointer">Deactivate</button>
+                    <div className="absolute right-2 top-8 bg-white border border-gray-200 rounded shadow z-10 text-left w-40">
+                      <button
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 border-0 bg-transparent cursor-pointer"
+                        onClick={() => openActionConfirm('deactivate', user)}
+                      >
+                        Deactivate
+                      </button>
+                      <button
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600 border-0 bg-transparent cursor-pointer"
+                        onClick={() => openActionConfirm('delete', user)}
+                      >
+                        Delete Account
+                      </button>
                     </div>
                   )}
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl mx-auto mb-3 ${
@@ -285,32 +349,55 @@ export default function ManageUsers() {
                     {user.barangay}
                   </div>
                   
-                  {/* Status for staff members - Read Only */}
-                  {(user.user_type === 'truck_driver' || user.user_type === 'garbage_collector') && (
-                    <div className="mb-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        user.status === "On Duty" 
-                          ? "bg-green-100 text-green-700"
-                          : user.status === "On Leave"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-red-100 text-red-700"
-                      }`}>
-                        {user.status || 'Off Duty'}
-                      </span>
-                    </div>
-                  )}
+                  <div className="mb-2">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      user.online_status === "online"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}>
+                      {user.online_status === "online" ? "Online" : "Offline"}
+                    </span>
+                  </div>
                   
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    user.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                  }`}>
-                    {user.is_active ? "Active" : "Inactive"}
-                  </span>
                 </div>
               ))}
             </div>
           </div>
         </div>
       </div>
+
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 px-4">
+          <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border border-gray-200">
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">
+              {actionCopy[confirmAction.type]?.title || "Confirm action"}
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              {actionCopy[confirmAction.type]?.description || "Are you sure you want to continue?"}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                className={`flex-1 px-4 py-2 rounded-lg text-white text-sm font-semibold ${
+                  confirmAction.type === 'delete'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-yellow-600 hover:bg-yellow-700'
+                }`}
+                onClick={handleConfirmAction}
+                disabled={actionLoading}
+              >
+                {actionLoading ? "Processing..." : (confirmAction.type === 'delete' ? 'Delete Account' : 'Deactivate User')}
+              </button>
+              <button
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                onClick={() => setConfirmAction(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
@@ -321,9 +408,9 @@ export default function ManageUsers() {
                 e.preventDefault();
                 // Send POST request to your backend API
                 try {
-                  const res = await fetch("https://koletrash.systemproj.com/backend/api/register_personnel.php", {
+                  const res = await fetch(buildApiUrl("register_personnel.php"), {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify(form),
                   });
                   const data = await res.json();

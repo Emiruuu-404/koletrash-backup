@@ -2,6 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { FiUser, FiCalendar, FiClock, FiCheckCircle, FiTrash2, FiChevronDown, FiCheck, FiSend, FiUsers } from 'react-icons/fi';
 import { FaUserTie, FaUserFriends, FaTimes } from 'react-icons/fa';
 import Select from 'react-select';
+import { buildApiUrl } from '../../config/api';
+
+const getAuthToken = () => {
+  try {
+    return localStorage.getItem('access_token');
+  } catch (err) {
+    console.warn('Unable to read access token', err);
+    return null;
+  }
+};
+
+const getAuthHeaders = (extra = {}) => {
+  const token = getAuthToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+};
 
 // Fix default marker icon issue with leaflet in React
 // Map removed in minimalist redesign
@@ -122,7 +140,9 @@ export default function TaskManagement() {
   const refreshAssignments = async () => {
     setAllAssignmentsLoading(true);
     try {
-      const res = await fetch('https://koletrash.systemproj.com/backend/api/get_all_task_assignments.php');
+      const res = await fetch(buildApiUrl('get_all_task_assignments.php'), {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success) {
         setAllAssignments(data.assignments);
@@ -158,7 +178,7 @@ export default function TaskManagement() {
   // Fetch barangays from backend
   useEffect(() => {
     setBarangayLoading(true);
-    fetch('https://koletrash.systemproj.com/backend/api/get_barangays.php')
+    fetch(buildApiUrl('get_barangays.php'), { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -178,7 +198,7 @@ export default function TaskManagement() {
   }, []);
 
   useEffect(() => {
-    fetch('https://koletrash.systemproj.com/backend/api/get_all_task_assignments.php')
+    fetch(buildApiUrl('get_all_task_assignments.php'), { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -191,7 +211,7 @@ export default function TaskManagement() {
   // Auto-refresh assignments every 30 seconds to reflect personnel responses
   useEffect(() => {
     const interval = setInterval(() => {
-      fetch('https://koletrash.systemproj.com/backend/api/get_all_task_assignments.php')
+      fetch(buildApiUrl('get_all_task_assignments.php'), { headers: getAuthHeaders() })
         .then(res => res.json())
         .then(data => {
           if (data.success) {
@@ -274,7 +294,7 @@ export default function TaskManagement() {
     // Reset selected collectors
     setSelectedCollectors([]);
     // Fetch personnel
-    fetch('https://koletrash.systemproj.com/backend/api/get_personnel.php')
+    fetch(buildApiUrl('get_personnel.php'), { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -294,7 +314,7 @@ export default function TaskManagement() {
       })
       .finally(() => setPersonnelLoading(false));
     // Fetch trucks
-    fetch('https://koletrash.systemproj.com/backend/api/get_trucks.php')
+    fetch(buildApiUrl('get_trucks.php'), { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -353,9 +373,9 @@ export default function TaskManagement() {
       return;
     }
 
-    fetch('https://koletrash.systemproj.com/backend/api/assign_task.php', {
+    fetch(buildApiUrl('assign_task.php'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         driver_id: driverId,
         collector_ids: collectorIds,
@@ -412,9 +432,9 @@ export default function TaskManagement() {
       return;
     }
 
-    fetch('https://koletrash.systemproj.com/backend/api/auto_generate_tasks.php', {
+    fetch(buildApiUrl('auto_generate_tasks.php'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         start_date: startDate,
         end_date: endDate,
@@ -471,9 +491,9 @@ export default function TaskManagement() {
       return;
     }
 
-    fetch('https://koletrash.systemproj.com/backend/api/generate_tasks_from_predefined.php', {
+    fetch(buildApiUrl('generate_tasks_from_predefined.php'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         start_date: startDate,
         end_date: endDate,
@@ -513,9 +533,9 @@ export default function TaskManagement() {
   const handleDeleteAssignment = async (assignmentId) => {
     if (!window.confirm('Are you sure you want to delete this assignment?')) return;
     try {
-      const res = await fetch('https://koletrash.systemproj.com/backend/api/delete_assignment.php', {
+      const res = await fetch(buildApiUrl('delete_assignment.php'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ assignment_id: assignmentId }),
       });
       const data = await res.json();
@@ -534,9 +554,9 @@ export default function TaskManagement() {
     if (!window.confirm('Are you sure you want to delete ALL shown assignments?')) return;
     for (const assignment of filteredAssignments) {
       try {
-        const res = await fetch('https://koletrash.systemproj.com/backend/api/delete_assignment.php', {
+        const res = await fetch(buildApiUrl('delete_assignment.php'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ assignment_id: assignment.assignment_id }),
         });
         const data = await res.json();
@@ -554,7 +574,7 @@ export default function TaskManagement() {
   // Fetch schedules from backend
   useEffect(() => {
     setSchedulesLoading(true);
-    fetch('https://koletrash.systemproj.com/backend/api/get_collection_schedule.php')
+    fetch(buildApiUrl('get_collection_schedule.php'), { headers: getAuthHeaders() })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -1025,8 +1045,9 @@ export default function TaskManagement() {
               onClick={async () => {
                 if (!window.confirm(`Mark ${selectedIds.length} assignment(s) as completed?`)) return;
                 for (const id of selectedIds) {
-                  await fetch('https://koletrash.systemproj.com/backend/api/update_assignment.php', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  await fetch(buildApiUrl('update_assignment.php'), {
+                    method: 'POST',
+                    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ assignment_id: id, status: 'completed' })
                   });
                 }
@@ -1038,8 +1059,9 @@ export default function TaskManagement() {
               onClick={async () => {
                 if (!window.confirm(`Cancel ${selectedIds.length} assignment(s)?`)) return;
                 for (const id of selectedIds) {
-                  await fetch('https://koletrash.systemproj.com/backend/api/update_assignment.php', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  await fetch(buildApiUrl('update_assignment.php'), {
+                    method: 'POST',
+                    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ assignment_id: id, status: 'cancelled' })
                   });
                 }
@@ -1084,12 +1106,14 @@ export default function TaskManagement() {
                         onBlur={async (e) => {
                           const v = e.target.value; if (!v || v === assignment.date) return;
                           const before = { date: assignment.date };
-                          await fetch('https://koletrash.systemproj.com/backend/api/update_assignment.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('update_assignment.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, date: v })
                           });
-                          await fetch('https://koletrash.systemproj.com/backend/api/log_task_event.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('log_task_event.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, event_type: 'update_date', before, after: { date: v } })
                           });
                           setAllAssignments(prev => prev.map(a => a.assignment_id === assignment.assignment_id ? { ...a, date: v } : a));
@@ -1101,12 +1125,14 @@ export default function TaskManagement() {
                         onBlur={async (e) => {
                           const v = e.target.value; if (!v || v === assignment.time) return;
                           const before = { time: assignment.time };
-                          await fetch('https://koletrash.systemproj.com/backend/api/update_assignment.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('update_assignment.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, time: v })
                           });
-                          await fetch('https://koletrash.systemproj.com/backend/api/log_task_event.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('log_task_event.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, event_type: 'update_time', before, after: { time: v } })
                           });
                           setAllAssignments(prev => prev.map(a => a.assignment_id === assignment.assignment_id ? { ...a, time: v } : a));
@@ -1153,12 +1179,14 @@ export default function TaskManagement() {
                         onChange={async (e) => {
                           const v = e.target.value; if (!v || v === assignment.status) return;
                           const before = { status: assignment.status };
-                          await fetch('https://koletrash.systemproj.com/backend/api/update_assignment.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('update_assignment.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, status: v })
                           });
-                          await fetch('https://koletrash.systemproj.com/backend/api/log_task_event.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          await fetch(buildApiUrl('log_task_event.php'), {
+                            method: 'POST',
+                            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ assignment_id: assignment.assignment_id, event_type: 'update_status', before, after: { status: v } })
                           });
                           setAllAssignments(prev => prev.map(a => a.assignment_id === assignment.assignment_id ? { ...a, status: v } : a));
@@ -1178,7 +1206,9 @@ export default function TaskManagement() {
                           setHistoryFor(assignment);
                           setHistoryLoading(true);
                           try {
-                            const res = await fetch(`https://koletrash.systemproj.com/backend/api/get_task_events.php?assignment_id=${assignment.assignment_id}`);
+                            const res = await fetch(`${buildApiUrl('get_task_events.php')}?assignment_id=${encodeURIComponent(assignment.assignment_id)}`, {
+                              headers: getAuthHeaders(),
+                            });
                             const data = await res.json();
                             if (data.success) setHistoryEvents(Array.isArray(data.events) ? data.events : []);
                             else setHistoryEvents([]);

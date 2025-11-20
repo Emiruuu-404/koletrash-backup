@@ -107,6 +107,14 @@ function App() {
 
   const confirmLogout = async () => {
     setShowLogoutModal(false)
+    
+    // Call logout API to set online_status to offline
+    const userId = localStorage.getItem('user_id')
+    if (userId) {
+      const { authService } = await import('./services/authService')
+      await authService.logout(parseInt(userId))
+    }
+    
     localStorage.removeItem('user')
     localStorage.removeItem('user_id')
     localStorage.removeItem('access_token')
@@ -114,7 +122,7 @@ function App() {
     localStorage.removeItem('token_type')
     await showLoader({
       primaryText: 'Signing you out…',
-      secondaryText: 'We’re securely closing your session.',
+      secondaryText: 'We\'re securely closing your session.',
       variant: 'login'
     })
     navigate('/', { replace: true })

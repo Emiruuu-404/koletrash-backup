@@ -342,4 +342,29 @@ export const authService = {
       throw error;
     }
   },
+
+  async logout(userId) {
+    try {
+      const response = await fetch(buildApiUrl('logout.php'), {
+        method: 'POST',
+        headers: withAuthHeaders({
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ user_id: userId }),
+      });
+
+      const data = await response.json();
+
+      // Don't throw error if logout API fails - still proceed with logout
+      if (!response.ok) {
+        console.warn('Logout API call failed:', data.message || 'Failed to logout');
+      }
+
+      return data;
+    } catch (error) {
+      // Silently fail - still proceed with logout
+      console.warn('Logout API call error:', error);
+      return { status: 'error', message: error.message };
+    }
+  },
 };

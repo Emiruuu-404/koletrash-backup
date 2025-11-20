@@ -24,6 +24,15 @@ const Navbar = () => {
     setTimeout(() => navigate('/login'), LOGIN_LOADING_DURATION_MS);
   };
 
+  const handleNavClick = (e, targetId) => {
+    e.preventDefault();
+    setOpen(false);
+    const element = document.querySelector(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <nav className="fixed w-full z-50 bg-green-700">
       <div className="max-w-[1240px] mx-auto px-8 py-5 flex justify-between items-center">
@@ -33,17 +42,17 @@ const Navbar = () => {
             alt="KolekTrash logo"
             className="h-10 w-auto drop-shadow-md transition-transform duration-200 group-hover:scale-105"
           />
-          <span className="text-2xl md:text-2xl font-bold text-white group-hover:text-gray-200 transition-colors duration-200">
+          <span className="hidden md:inline text-2xl md:text-2xl font-bold text-white group-hover:text-gray-200 transition-colors duration-200">
             KolekTrash
           </span>
         </Link>
 
         <div className="hidden md:flex items-center space-x-8">
           <div className="flex space-x-8">
-            <a href="#home" className="text-white hover:text-gray-200 transition-colors duration-200">Home</a>
-            <a href="#services" className="text-white hover:text-gray-200 transition-colors duration-200">Services</a>
-            <a href="#about" className="text-white hover:text-gray-200 transition-colors duration-200">About Us</a>
-            <a href="#contact" className="text-white hover:text-gray-200 transition-colors duration-200">Contact</a>
+            <a href="#home" onClick={(e) => handleNavClick(e, '#home')} className="text-white hover:text-gray-200 transition-colors duration-200">Home</a>
+            <a href="#services" onClick={(e) => handleNavClick(e, '#services')} className="text-white hover:text-gray-200 transition-colors duration-200">Services</a>
+            <a href="#about" onClick={(e) => handleNavClick(e, '#about')} className="text-white hover:text-gray-200 transition-colors duration-200">About Us</a>
+            <a href="#contact" onClick={(e) => handleNavClick(e, '#contact')} className="text-white hover:text-gray-200 transition-colors duration-200">Contact</a>
           </div>
           <button 
             type="button"
@@ -79,11 +88,11 @@ const Navbar = () => {
       </div>
 
       {open && (
-        <div className="md:hidden absolute top-full left-0 right-0 px-8 py-4 space-y-4 bg-white shadow-lg">
-          <a href="#home" className="block text-green-700 hover:text-green-600 transition-colors duration-200">Home</a>
-          <a href="#services" className="block text-green-700 hover:text-green-600 transition-colors duration-200">Services</a>
-          <a href="#about" className="block text-green-700 hover:text-green-600 transition-colors duration-200">About Us</a>
-          <a href="#contact" className="block text-green-700 hover:text-green-600 transition-colors duration-200">Contact</a>
+        <div className="md:hidden absolute top-full left-0 right-0 px-8 py-4 space-y-4 backdrop-blur-md bg-white/80 shadow-lg">
+          <a href="#home" onClick={(e) => handleNavClick(e, '#home')} className="block text-green-700 hover:text-green-600 transition-colors duration-200">Home</a>
+          <a href="#services" onClick={(e) => handleNavClick(e, '#services')} className="block text-green-700 hover:text-green-600 transition-colors duration-200">Services</a>
+          <a href="#about" onClick={(e) => handleNavClick(e, '#about')} className="block text-green-700 hover:text-green-600 transition-colors duration-200">About Us</a>
+          <a href="#contact" onClick={(e) => handleNavClick(e, '#contact')} className="block text-green-700 hover:text-green-600 transition-colors duration-200">Contact</a>
           <button 
             type="button"
             onClick={handleLoginClick}

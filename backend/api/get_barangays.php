@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/_bootstrap.php';
-header("Access-Control-Allow-Origin: *");
-header("Content-Type: application/json");
+// CORS headers are already set by _bootstrap.php via cors.php
 require_once("../config/database.php");
 
 try {

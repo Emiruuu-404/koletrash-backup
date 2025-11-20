@@ -1,15 +1,6 @@
 <?php
 require_once __DIR__ . '/_bootstrap.php';
-header('Access-Control-Allow-Origin: *');
-header('Content-Type: application/json');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Access-Control-Allow-Headers,Content-Type,Access-Control-Allow-Methods,Authorization,X-Requested-With');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
+// CORS headers and OPTIONS handling are already set by _bootstrap.php via cors.php
 require_once '../config/database.php';
 
 try {
@@ -54,7 +45,20 @@ try {
 
     $where = [];
     $params = [];
-    if ($scheduleType) { $where[] = 'ps.schedule_type = ?'; $params[] = $scheduleType; }
+    if ($scheduleType) {
+        // Handle comma-separated schedule types (e.g., "daily_priority,fixed_days")
+        $types = array_map('trim', explode(',', $scheduleType));
+        if (count($types) > 1) {
+            $placeholders = implode(',', array_fill(0, count($types), '?'));
+            $where[] = "ps.schedule_type IN ($placeholders)";
+            foreach ($types as $type) {
+                $params[] = $type;
+            }
+        } else {
+            $where[] = 'ps.schedule_type = ?';
+            $params[] = $scheduleType;
+        }
+    }
     if ($clusterId) { $where[] = 'ps.cluster_id = ?'; $params[] = $clusterId; }
     if ($weekOfMonth !== null && $weekOfMonth > 0) { $where[] = 'ps.week_of_month = ?'; $params[] = $weekOfMonth; }
     if (!empty($days)) {

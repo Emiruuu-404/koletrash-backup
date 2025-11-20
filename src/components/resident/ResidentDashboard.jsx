@@ -503,6 +503,13 @@ const ResidentDashboard = () => {
   const activeCooldownMessage = avatarUploadError ? '' : formatCooldownMessage(avatarCooldownUntil);
 
   const confirmLogout = async () => {
+    // Call logout API to set online_status to offline
+    const userId = localStorage.getItem('user_id');
+    if (userId) {
+      const { authService } = await import('../../services/authService');
+      await authService.logout(parseInt(userId));
+    }
+    
     // Clear user data from localStorage
     localStorage.removeItem('user');
     localStorage.removeItem('user_id');
@@ -510,7 +517,7 @@ const ResidentDashboard = () => {
     setShowLogoutModal(false);
     await showLoader({
       primaryText: 'Signing you out…',
-      secondaryText: 'We’re securely closing your session.',
+      secondaryText: 'We\'re securely closing your session.',
       variant: 'login'
     });
     navigate('/login', { replace: true });
